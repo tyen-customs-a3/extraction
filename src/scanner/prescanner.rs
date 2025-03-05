@@ -144,7 +144,7 @@ impl<'a> PreScanner<'a> {
         db: &Arc<Mutex<ScanDatabase>>,
         timeout: u32,
     ) -> Result<PboScanResult> {
-        info!("Scanning PBO: {}", path.display());
+        debug!("Scanning PBO: {}", path.display());
         debug!("Looking for extensions: {}", extensions);
 
         // First check if we need to process this PBO

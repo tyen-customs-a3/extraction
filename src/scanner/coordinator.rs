@@ -36,9 +36,9 @@ impl<'a> ScanCoordinator<'a> {
         
         // Log whether the database file exists
         if db_path.exists() {
-            info!("Found existing scan database at {}", db_path.display());
+            debug!("Found existing scan database at {}", db_path.display());
         } else {
-            info!("No existing scan database found at {}, will create new one", db_path.display());
+            debug!("No existing scan database found at {}, will create new one", db_path.display());
         }
         
         let db = Arc::new(Mutex::new(ScanDatabase::load_or_create(&db_path)?));
@@ -47,7 +47,7 @@ impl<'a> ScanCoordinator<'a> {
         {
             let db_guard = db.lock().unwrap();
             let stats = db_guard.get_stats();
-            info!("Loaded database with {} total PBOs, {} processed, {} failed", 
+            debug!("Loaded database with {} total PBOs, {} processed, {} failed", 
                   stats.total, stats.processed, stats.total - stats.processed);
         }
         
@@ -73,17 +73,17 @@ impl<'a> ScanCoordinator<'a> {
                stats.total, stats.processed, stats.total - stats.processed);
         
         db.save(&db_path)?;
-        info!("Saved scan database to {}", db_path.display());
+        debug!("Saved scan database to {}", db_path.display());
         Ok(())
     }
 
     pub async fn run(&self) -> Result<()> {
-        info!("Starting extraction process with the following configuration:");
-        info!("  Input directory: {}", self.input_dir.display());
-        info!("  Cache directory: {}", self.cache_dir.display());
-        info!("  Extensions filter: {}", self.extensions);
-        info!("  Threads: {}", self.threads);
-        info!("  Timeout: {} seconds", self.timeout);
+        debug!("Starting extraction process with the following configuration:");
+        debug!("  Input directory: {}", self.input_dir.display());
+        debug!("  Cache directory: {}", self.cache_dir.display());
+        debug!("  Extensions filter: {}", self.extensions);
+        debug!("  Threads: {}", self.threads);
+        debug!("  Timeout: {} seconds", self.timeout);
 
         // Verify directories exist
         if !self.input_dir.exists() {
@@ -92,7 +92,7 @@ impl<'a> ScanCoordinator<'a> {
 
         // Create cache directory if it doesn't exist
         if !self.cache_dir.exists() {
-            info!("Creating cache directory: {}", self.cache_dir.display());
+            debug!("Creating cache directory: {}", self.cache_dir.display());
             std::fs::create_dir_all(self.cache_dir)?;
         }
 
@@ -101,7 +101,7 @@ impl<'a> ScanCoordinator<'a> {
             .unwrap();
 
         // Count total PBOs first for reference
-        info!("Scanning input directory for PBO files...");
+        debug!("Scanning input directory for PBO files...");
         let total_pbo_count = WalkDir::new(self.input_dir)
             .into_iter()
             .filter_map(|e| e.ok())
@@ -116,7 +116,7 @@ impl<'a> ScanCoordinator<'a> {
             return Err(anyhow::anyhow!("No PBO files found in input directory: {}", self.input_dir.display()));
         }
 
-        info!("Found {} PBO files to process", total_pbo_count);
+        debug!("Found {} PBO files to process", total_pbo_count);
 
         // Initialize prescanner with multithreading
         let prescanner = PreScanner::new(
@@ -128,7 +128,7 @@ impl<'a> ScanCoordinator<'a> {
         );
 
         // Run parallel prescan with proper progress bar
-        info!("Starting hash check of {} PBOs using {} threads...", total_pbo_count, self.threads);
+        debug!("Starting hash check of {} PBOs using {} threads...", total_pbo_count, self.threads);
         let prescan_pb = self.progress.add(ProgressBar::new(total_pbo_count as u64));
         prescan_pb.set_style(scan_style.clone());
         prescan_pb.set_message("Checking PBO hashes...");
@@ -143,19 +143,19 @@ impl<'a> ScanCoordinator<'a> {
         };
         
         let skipped_count = total_pbo_count - hash_results.len() - previously_failed;
-        info!("Hash check complete:");
-        info!("  Total PBOs found: {}", total_pbo_count);
-        info!("  Skipped (unchanged): {}", skipped_count);
-        info!("  Skipped (previously failed): {}", previously_failed);
-        info!("  Need processing: {}", hash_results.len());
+        debug!("Hash check complete:");
+        debug!("  Total PBOs found: {}", total_pbo_count);
+        debug!("  Skipped (unchanged): {}", skipped_count);
+        debug!("  Skipped (previously failed): {}", previously_failed);
+        debug!("  Need processing: {}", hash_results.len());
 
         if hash_results.is_empty() {
-            info!("No PBOs need processing, extraction complete");
+            debug!("No PBOs need processing, extraction complete");
             return Ok(());
         }
 
         // Scan PBO contents for files matching extensions using multithreading
-        info!("Scanning PBO contents for files matching extensions: {} using {} threads", self.extensions, self.threads);
+        debug!("Scanning PBO contents for files matching extensions: {} using {} threads", self.extensions, self.threads);
         let scan_pb = self.progress.add(ProgressBar::new(hash_results.len() as u64));
         scan_pb.set_style(scan_style.clone());
         scan_pb.set_message("Scanning PBO contents...");
@@ -171,7 +171,7 @@ impl<'a> ScanCoordinator<'a> {
             .filter_map(|result| {
                 match result {
                     Ok(result) => {
-                        info!("Found {} matching files in {}", result.expected_files.len(), result.path.display());
+                        debug!("Found {} matching files in {}", result.expected_files.len(), result.path.display());
                         if !result.expected_files.is_empty() {
                             trace!("Files to extract from {}: {:?}", result.path.display(), result.expected_files);
                         }
@@ -192,17 +192,17 @@ impl<'a> ScanCoordinator<'a> {
             .map(|result| result.expected_files.len())
             .sum();
 
-        info!("PBO content scan complete:");
-        info!("  Total PBOs scanned: {}", scan_results.len());
-        info!("  Total files to extract: {}", total_files);
+        debug!("PBO content scan complete:");
+        debug!("  Total PBOs scanned: {}", scan_results.len());
+        debug!("  Total files to extract: {}", total_files);
 
         if total_files == 0 {
-            info!("No files to extract, extraction complete");
+            debug!("No files to extract, extraction complete");
             return Ok(());
         }
 
         // Configure processor for remaining PBOs with multithreading
-        info!("Initializing PBO processor for extraction with {} threads", self.threads);
+        debug!("Initializing PBO processor for extraction with {} threads", self.threads);
         let processor = PboProcessor::new(
             self.input_dir,
             self.cache_dir,
@@ -213,7 +213,7 @@ impl<'a> ScanCoordinator<'a> {
         );
 
         // Process remaining PBOs in parallel with multithreading
-        info!("Starting extraction of {} files from {} PBOs using {} threads", total_files, scan_results.len(), self.threads);
+        debug!("Starting extraction of {} files from {} PBOs using {} threads", total_files, scan_results.len(), self.threads);
         let extract_pb = self.progress.add(ProgressBar::new(scan_results.len() as u64));
         extract_pb.set_style(scan_style);
         extract_pb.set_message("Extracting files...");
@@ -226,24 +226,24 @@ impl<'a> ScanCoordinator<'a> {
             db.get_stats()
         };
         
-        info!("Extraction complete:");
-        info!("  Total PBOs: {}", final_stats.total);
-        info!("  Successfully processed: {}", final_stats.processed);
-        info!("  Empty PBOs: {}", final_stats.empty);
-        info!("  No matching files: {}", final_stats.no_matching_files);
-        info!("  Invalid format: {}", final_stats.invalid_format);
-        info!("  Failed extraction: {}", final_stats.failed);
-        info!("  Missing expected files: {}", final_stats.missing_expected_files);
+        debug!("Extraction complete:");
+        debug!("  Total PBOs: {}", final_stats.total);
+        debug!("  Successfully processed: {}", final_stats.processed);
+        debug!("  Empty PBOs: {}", final_stats.empty);
+        debug!("  No matching files: {}", final_stats.no_matching_files);
+        debug!("  Invalid format: {}", final_stats.invalid_format);
+        debug!("  Failed extraction: {}", final_stats.failed);
+        debug!("  Missing expected files: {}", final_stats.missing_expected_files);
         
         // Verify files were actually extracted
-        info!("Verifying extracted files in cache directory: {}", self.cache_dir.display());
+        debug!("Verifying extracted files in cache directory: {}", self.cache_dir.display());
         let extracted_file_count = WalkDir::new(self.cache_dir)
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_file())
             .count();
         
-        info!("Found {} files in cache directory", extracted_file_count);
+        debug!("Found {} files in cache directory", extracted_file_count);
         
         if extracted_file_count == 0 && total_files > 0 {
             warn!("No files were extracted despite {} files being expected", total_files);

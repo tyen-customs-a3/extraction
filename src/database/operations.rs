@@ -105,7 +105,7 @@ impl ScanDatabase {
             } else {
                 // Some files were extracted, but not all
                 // Still consider it a success, but note that some files were missing
-                log::info!("Some expected files were not extracted from {}, but marking as successful", path_str);
+                log::debug!("Some expected files were not extracted from {}, but marking as successful", path_str);
                 None
             }
         } else {

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use anyhow::Result;
-use log::{info, warn};
+use log::{debug, info, warn};
 use pbo_tools::core::api::{PboApi, PboApiOps};
 use pbo_tools::extract::ExtractOptions;
 use walkdir::WalkDir;
@@ -32,12 +32,12 @@ pub struct ExtractionConfig<'a> {
 
 /// Main entry point for PBO extraction functionality
 pub async fn extract_pbos(config: ExtractionConfig<'_>) -> Result<()> {
-    info!("Starting PBO extraction with configuration:");
-    info!("  Input directory: {}", config.input_dir.display());
-    info!("  Cache directory: {}", config.cache_dir.display());
-    info!("  Extensions filter: {}", config.extensions);
-    info!("  Threads: {}", config.threads);
-    info!("  Timeout: {} seconds", config.timeout);
+    debug!("Starting PBO extraction with configuration:");
+    debug!("  Input directory: {}", config.input_dir.display());
+    debug!("  Cache directory: {}", config.cache_dir.display());
+    debug!("  Extensions filter: {}", config.extensions);
+    debug!("  Threads: {}", config.threads);
+    debug!("  Timeout: {} seconds", config.timeout);
     
     // Verify input directory exists
     if !config.input_dir.exists() {
@@ -46,7 +46,7 @@ pub async fn extract_pbos(config: ExtractionConfig<'_>) -> Result<()> {
     
     // Create cache directory if it doesn't exist
     if !config.cache_dir.exists() {
-        info!("Creating cache directory: {}", config.cache_dir.display());
+        debug!("Creating cache directory: {}", config.cache_dir.display());
         std::fs::create_dir_all(config.cache_dir)?;
     }
     
@@ -62,14 +62,14 @@ pub async fn extract_pbos(config: ExtractionConfig<'_>) -> Result<()> {
     
     // Verify files were actually extracted
     if result.is_ok() {
-        info!("Verifying extracted files in cache directory: {}", config.cache_dir.display());
+        debug!("Verifying extracted files in cache directory: {}", config.cache_dir.display());
         let extracted_file_count = WalkDir::new(config.cache_dir)
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_file())
             .count();
         
-        info!("Found {} files in cache directory", extracted_file_count);
+        debug!("Found {} files in cache directory", extracted_file_count);
         
         if extracted_file_count == 0 {
             warn!("No files were extracted to the cache directory");
@@ -78,7 +78,7 @@ pub async fn extract_pbos(config: ExtractionConfig<'_>) -> Result<()> {
         // Verify that the database file exists
         let db_path = config.cache_dir.join("scan_db.json");
         if db_path.exists() {
-            info!("Database file exists at: {}", db_path.display());
+            debug!("Database file exists at: {}", db_path.display());
         } else {
             warn!("Database file not found at: {}", db_path.display());
         }

@@ -52,13 +52,13 @@ impl<'a> PboProcessor<'a> {
     }
 
     pub fn process_all(&self, scan_results: &[PboScanResult], progress: ProgressBar) -> Result<()> {
-        info!("Processing {} PBOs for extraction", scan_results.len());
+        debug!("Processing {} PBOs for extraction", scan_results.len());
         
         // Count total expected files
         let total_expected_files: usize = scan_results.iter()
             .map(|result| result.expected_files.len())
             .sum();
-        info!("Total expected files to extract: {}", total_expected_files);
+        debug!("Total expected files to extract: {}", total_expected_files);
         
         // Process each PBO
         let results: Vec<_> = scan_results
@@ -75,10 +75,10 @@ impl<'a> PboProcessor<'a> {
         let success_count = results.iter().filter(|(_, r)| r.is_ok()).count();
         let failure_count = results.len() - success_count;
         
-        info!("PBO processing complete:");
-        info!("  Total PBOs processed: {}", results.len());
-        info!("  Successful: {}", success_count);
-        info!("  Failed: {}", failure_count);
+        debug!("PBO processing complete:");
+        debug!("  Total PBOs processed: {}", results.len());
+        debug!("  Successful: {}", success_count);
+        debug!("  Failed: {}", failure_count);
         
         progress.finish_with_message("Extraction complete");
         Ok(())
@@ -93,7 +93,7 @@ impl<'a> PboProcessor<'a> {
             let db = self.db.lock().unwrap();
             if let Some(info) = db.get_pbo_info(&scan_result.path) {
                 if !info.failed && info.hash == scan_result.hash {
-                    info!("PBO unchanged, skipping extraction: {}", scan_result.path.display());
+                    debug!("PBO unchanged, skipping extraction: {}", scan_result.path.display());
                     return Ok(());
                 }
             }
@@ -101,7 +101,7 @@ impl<'a> PboProcessor<'a> {
 
         // Skip if no matching files
         if scan_result.expected_files.is_empty() {
-            info!("No matching files found in PBO, skipping: {}", scan_result.path.display());
+            debug!("No matching files found in PBO, skipping: {}", scan_result.path.display());
             let mut db = self.db.lock().unwrap();
             db.update_pbo_with_reason(
                 &scan_result.path,
@@ -169,7 +169,7 @@ impl<'a> PboProcessor<'a> {
         debug!("Trying standard extraction for PBO: {}", scan_result.path.display());
         match api.extract_with_options(&scan_result.path, &output_dir, options.clone()) {
             Ok(result) => {
-                info!("Extraction successful with standard extraction");
+                debug!("Extraction successful with standard extraction");
                 extract_result = Some(result);
                 extraction_succeeded = true;
             },
@@ -182,7 +182,7 @@ impl<'a> PboProcessor<'a> {
                 permissive_options.file_filter = None; // Extract all files
                 match api.extract_with_options(&scan_result.path, &output_dir, permissive_options) {
                     Ok(result) => {
-                        info!("Extraction successful with permissive extraction");
+                        debug!("Extraction successful with permissive extraction");
                         extract_result = Some(result);
                         extraction_succeeded = true;
                     },
@@ -193,7 +193,7 @@ impl<'a> PboProcessor<'a> {
                         debug!("Trying direct extraction for PBO: {}", scan_result.path.display());
                         match api.extract_files(&scan_result.path, &output_dir, None) {
                             Ok(result) => {
-                                info!("Extraction successful with direct extraction");
+                                debug!("Extraction successful with direct extraction");
                                 extract_result = Some(result);
                                 extraction_succeeded = true;
                             },
@@ -216,7 +216,7 @@ impl<'a> PboProcessor<'a> {
                 .filter(|e| e.file_type().is_file())
                 .count();
                 
-            info!("Found {} files on disk after extraction", extracted_files_on_disk);
+            debug!("Found {} files on disk after extraction", extracted_files_on_disk);
             
             if extracted_files_on_disk == 0 {
                 warn!("No files were extracted to disk from {}", scan_result.path.display());
@@ -228,7 +228,7 @@ impl<'a> PboProcessor<'a> {
                     SkipReason::Empty,
                 );
             } else {
-                info!("Successfully extracted {} files from PBO {} to {}", 
+                debug!("Successfully extracted {} files from PBO {} to {}", 
                     extracted_files_on_disk,
                     scan_result.path.display(), 
                     output_dir.display()
@@ -237,7 +237,7 @@ impl<'a> PboProcessor<'a> {
                 // Parse extracted files from output
                 let mut extracted_files = Vec::new();
                 for line in extract_result.stdout.lines() {
-                    info!("  {}", line);
+                    debug!("  {}", line);
                     // Extract the filename from the output line
                     if let Some(file_path) = line.trim().strip_prefix("Extracting ") {
                         extracted_files.push(file_path.to_string());
@@ -266,7 +266,7 @@ impl<'a> PboProcessor<'a> {
                 }
                 
                 // Verify files actually exist on disk
-                info!("Verifying extracted files on disk");
+                debug!("Verifying extracted files on disk");
                 let mut missing_on_disk = Vec::new();
                 for file in &extracted_files {
                     let file_path = output_dir.join(file);
@@ -274,7 +274,7 @@ impl<'a> PboProcessor<'a> {
                         missing_on_disk.push(file.clone());
                         warn!("File reported as extracted but not found on disk: {}", file_path.display());
                     } else {
-                        info!("Verified file exists: {}", file_path.display());
+                        debug!("Verified file exists: {}", file_path.display());
                     }
                 }
                 

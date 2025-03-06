@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use log::{debug, info, trace, warn};
+use log::{debug, trace, warn};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use walkdir::WalkDir;
 use anyhow::Result;
@@ -9,10 +9,8 @@ use rayon::prelude::*;
 use super::prescanner::PreScanner;
 use super::processor::PboProcessor;
 use super::types::{PboHashResult, PboScanResult};
+use super::utils;
 use crate::extraction::database::ScanDatabase;
-use pbo_tools::core::{PboApi, PboApiOps};
-use pbo_tools::extract::ExtractOptions;
-use crate::extraction::utils;
 
 pub struct ScanCoordinator<'a> {
     input_dir: &'a Path,
@@ -262,77 +260,8 @@ impl<'a> ScanCoordinator<'a> {
         path: &Path,
         hash_result: &PboHashResult,
     ) -> Result<PboScanResult> {
-        debug!("Scanning PBO contents: {}", path.display());
-
-        // Create PBO API with timeout
-        let api = PboApi::builder()
-            .with_timeout(self.timeout)
-            .build();
-
-        // For testing purposes, if the file is empty, still process it but with no files
-        if std::fs::metadata(path)?.len() == 0 {
-            debug!("Empty PBO file, returning empty file list");
-            return Ok(PboScanResult {
-                path: path.to_owned(),
-                hash: hash_result.hash.clone(),
-                expected_files: vec![],
-            });
-        }
-
-        // For testing purposes, if the file starts with "PboPrefix=", parse it as a mock PBO
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if content.starts_with("PboPrefix=") {
-                debug!("Found mock PBO file");
-                let mut matching_files = Vec::new();
-                for line in content.lines() {
-                    if let Some(file) = line.split('=').next() {
-                        if file.contains('.') {
-                            let path = Path::new(file);
-                            if crate::extraction::utils::matches_extension(path, self.extensions) {
-                                trace!("    -> Matches extension filter: {}", file);
-                                matching_files.push(file.to_string());
-                            }
-                        }
-                    }
-                }
-                debug!("Found {} matching files in mock PBO", matching_files.len());
-                return Ok(PboScanResult {
-                    path: path.to_owned(),
-                    hash: hash_result.hash.clone(),
-                    expected_files: matching_files,
-                });
-            }
-        }
-
-        // List contents with options
-        let options = ExtractOptions {
-            no_pause: true,
-            warnings_as_errors: false,
-            brief_listing: true,
-            ..Default::default()
-        };
-
-        // Use a thread-safe approach to list PBO contents
-        let result = api.list_with_options(path, options)?;
-        let mut matching_files = Vec::new();
-
-        debug!("Files in PBO:");
-        for file in result.get_file_list() {
-            trace!("  {}", file);
-            let path = Path::new(&file);
-            if crate::extraction::utils::matches_extension(path, self.extensions) {
-                trace!("    -> Matches extension filter");
-                matching_files.push(file.to_string());
-            }
-        }
-
-        debug!("Found {} matching files", matching_files.len());
-
-        Ok(PboScanResult {
-            path: path.to_owned(),
-            hash: hash_result.hash.clone(),
-            expected_files: matching_files,
-        })
+        // Use the common utility function instead of duplicating code
+        utils::scan_pbo_contents(path, &hash_result.hash, self.extensions, self.timeout)
     }
 }
 
@@ -342,6 +271,7 @@ mod tests {
     use tempfile::tempdir;
     use std::fs::File;
     use std::io::Write;
+    use crate::extraction::utils;
     
     #[tokio::test]
     async fn test_database_persistence() -> Result<()> {
@@ -455,4 +385,4 @@ mod tests {
         
         Ok(())
     }
-} 
+}

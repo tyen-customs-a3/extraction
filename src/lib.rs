@@ -7,10 +7,5 @@ pub mod types;
 #[path = "mod.rs"]
 pub mod extraction;
 
-// Re-export only specific items to avoid ambiguity
-pub use extraction::{extract_pbos, ExtractionConfig};
-
-// Re-export specific types to avoid ambiguity
-pub use types::{PboInfo, SkipReason, ScanDatabase, ScanStats, PboScanResult};
-pub use database::types::*;
-pub use scanner::types::*;
+// Re-export selected public items to avoid ambiguities
+pub use extraction::{extract_pbo, extract_pbo_with_options, extract_pbos, ExtractionConfig};

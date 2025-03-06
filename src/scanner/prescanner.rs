@@ -3,14 +3,12 @@ use std::path::Path;
 use anyhow::Result;
 use futures::stream::{self, StreamExt};
 use indicatif::ProgressBar;
-use log::{debug, info};
+use log::debug;
 use walkdir::WalkDir;
-use pbo_tools::core::{PboApi, PboApiOps};
-use pbo_tools::extract::ExtractOptions;
 
 use super::types::{PboScanResult, PboHashResult};
+use super::utils;
 use crate::extraction::database::ScanDatabase;
-use crate::extraction::utils;
 
 pub struct PreScanner<'a> {
     input_dir: &'a Path,
@@ -61,15 +59,13 @@ impl<'a> PreScanner<'a> {
             
         let mut stream = chunks.map(|chunk| {
             let db = Arc::clone(&self.db);
-            let extensions = self.extensions.to_string();
-            let timeout = self.timeout;
             let chunk_size = chunk.len();
             
             tokio::spawn(async move {
                 let mut chunk_results = Vec::new();
                 for path in chunk {
                     debug!("Checking PBO hash in thread: {}", path.display());
-                    if let Ok(result) = Self::check_pbo_hash(&path, &db) {
+                    if let Ok(result) = utils::check_pbo_hash(&path, &db) {
                         chunk_results.push(result);
                     }
                 }
@@ -91,132 +87,18 @@ impl<'a> PreScanner<'a> {
         Ok(results)
     }
 
-    fn check_pbo_hash(
-        path: &Path,
-        db: &Arc<Mutex<ScanDatabase>>,
-    ) -> Result<PboHashResult> {
-        debug!("Checking PBO hash: {}", path.display());
-
-        let hash = utils::calculate_file_hash(path)?;
-        
-        // Check if we've seen this PBO before
-        let needs_processing = {
-            let db = db.lock().unwrap();
-            match db.get_pbo_info(path) {
-                Some(info) => {
-                    debug!("Found PBO in database: {}", path.display());
-                    debug!("  Stored hash: {}", info.hash);
-                    debug!("  Current hash: {}", hash);
-                    debug!("  Failed: {}", info.failed);
-                    if !info.failed && info.hash == hash {
-                        debug!("  PBO unchanged and previously successful, skipping");
-                        false
-                    } else if info.failed {
-                        debug!("  PBO previously failed, will process again");
-                        true
-                    } else {
-                        debug!("  PBO hash changed, will process again");
-                        true
-                    }
-                },
-                None => {
-                    debug!("PBO not found in database, will process: {}", path.display());
-                    true
-                }
-            }
-        };
-
-        if !needs_processing {
-            debug!("PBO unchanged, skipping: {}", path.display());
-            return Err(anyhow::anyhow!("PBO unchanged"));
-        }
-
-        debug!("PBO needs processing: {}", path.display());
-        Ok(PboHashResult {
-            path: path.to_owned(),
-            hash,
-        })
-    }
-
-    fn scan_pbo(
+    // Simplified function that leverages our common utility
+    pub fn scan_pbo(
         path: &Path,
         extensions: &str,
         db: &Arc<Mutex<ScanDatabase>>,
         timeout: u32,
     ) -> Result<PboScanResult> {
-        debug!("Scanning PBO: {}", path.display());
-        debug!("Looking for extensions: {}", extensions);
-
         // First check if we need to process this PBO
-        let hash_result = Self::check_pbo_hash(path, db)?;
-        let hash = hash_result.hash;
+        let hash_result = utils::check_pbo_hash(path, db)?;
         
-        // For testing purposes, if the file is empty, still process it but with no files
-        if std::fs::metadata(path)?.len() == 0 {
-            debug!("Empty PBO file, returning empty file list");
-            return Ok(PboScanResult {
-                path: path.to_owned(),
-                hash,
-                expected_files: vec![],
-            });
-        }
-
-        // For testing purposes, if the file starts with "PboPrefix=", parse it as a mock PBO
-        let content = std::fs::read_to_string(path)?;
-        if content.starts_with("PboPrefix=") {
-            debug!("Found mock PBO file");
-            let mut matching_files = Vec::new();
-            for line in content.lines() {
-                if let Some(file) = line.split('=').next() {
-                    if file.contains('.') {
-                        let path = Path::new(file);
-                        if utils::matches_extension(path, extensions) {
-                            debug!("    -> Matches extension filter: {}", file);
-                            matching_files.push(file.to_string());
-                        }
-                    }
-                }
-            }
-            debug!("Found {} matching files in mock PBO", matching_files.len());
-            return Ok(PboScanResult {
-                path: path.to_owned(),
-                hash,
-                expected_files: matching_files,
-            });
-        }
-
-        // If not a mock PBO, use the real PBO API
-        let api = PboApi::builder()
-            .with_timeout(timeout)
-            .build();
-
-        let options = ExtractOptions {
-            no_pause: true,
-            warnings_as_errors: false,
-            brief_listing: true,
-            ..Default::default()
-        };
-
-        let result = api.list_with_options(path, options)?;
-        let mut matching_files = Vec::new();
-
-        debug!("Files in PBO:");
-        for file in result.get_file_list() {
-            debug!("  {}", file);
-            let path = Path::new(&file);
-            if utils::matches_extension(path, extensions) {
-                debug!("    -> Matches extension filter");
-                matching_files.push(file.to_string());
-            }
-        }
-
-        debug!("Found {} matching files", matching_files.len());
-
-        Ok(PboScanResult {
-            path: path.to_owned(),
-            hash,
-            expected_files: matching_files,
-        })
+        // Then scan for matching files
+        utils::scan_pbo_contents(path, &hash_result.hash, extensions, timeout)
     }
 }
 
@@ -227,6 +109,7 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use std::path::PathBuf;
+    use crate::extraction::utils;
 
     fn create_test_pbo(dir: &Path, name: &str, content: &[u8]) -> PathBuf {
         let path = dir.join(name);
@@ -302,4 +185,4 @@ mod tests {
         let result = PreScanner::scan_pbo(&pbo_path, "txt,cpp", &db, 30);
         assert!(result.is_err());
     }
-} 
+}

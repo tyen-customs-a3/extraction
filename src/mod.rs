@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 use anyhow::Result;
-use log::{debug, info, warn};
+use log::{debug, warn};
 use pbo_tools::core::api::{PboApi, PboApiOps};
 use pbo_tools::extract::ExtractOptions;
 use walkdir::WalkDir;
 
+use crate::scanner::coordinator::ScanCoordinator;
 pub use crate::extraction::database::types::ScanDatabase;
 
 pub mod types;
@@ -50,7 +51,7 @@ pub async fn extract_pbos(config: ExtractionConfig<'_>) -> Result<()> {
         std::fs::create_dir_all(config.cache_dir)?;
     }
     
-    let coordinator = scanner::ScanCoordinator::new(
+    let coordinator = ScanCoordinator::new(
         config.input_dir,
         config.cache_dir,
         config.extensions,

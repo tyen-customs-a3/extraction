@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 use std::path::PathBuf;
 
 #[derive(Debug)]
@@ -9,6 +10,5 @@ pub struct PboHashResult {
 #[derive(Debug)]
 pub struct PboScanResult {
     pub path: PathBuf,
-    pub hash: String,
     pub expected_files: Vec<String>,
-} 
+}

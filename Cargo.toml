@@ -25,3 +25,7 @@ path = "examples/basic_extraction.rs"
 [[example]]
 name = "advanced_extraction"
 path = "examples/advanced_extraction.rs"
+
+[lib]
+name = "extraction"
+path = "src/lib.rs"

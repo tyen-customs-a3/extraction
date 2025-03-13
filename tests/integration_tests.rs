@@ -2,13 +2,14 @@ use std::path::Path;
 use anyhow::Result;
 use log::info;
 use env_logger;
+use pbo_tools::core::api::{PboApi, PboApiOps};
 
-const TEST_PBO_DIR: &str = "tests/fixtures/medical";
+const TEST_PBO_DIR: &str = "tests/fixtures";
+const TEST_PBO: &str = "ace_medical.pbo";
 
 // Expected files in the medical test fixture
 const EXPECTED_FILES: &[&str] = &[
     // Root files
-    "$PBOPREFIX$.txt",  // Added this file
     "ACE_Settings.hpp",
     "CfgEventHandlers.hpp",
     "CfgVehicles.hpp",
@@ -25,32 +26,32 @@ const EXPECTED_FILES: &[&str] = &[
     "XEH_preStart.sqfc",
     
     // Dev files
-    "dev\\debugDisplay.sqf",
-    "dev\\debugDisplay.sqfc",
-    "dev\\reportSettings.sqf",
-    "dev\\reportSettings.sqfc",
-    "dev\\test_hitpointConfigs.sqf",
-    "dev\\test_hitpointConfigs.sqfc",
-    "dev\\watchVariable.sqf",
-    "dev\\watchVariable.sqfc",
+    "dev/debugDisplay.sqf",
+    "dev/debugDisplay.sqfc",
+    "dev/reportSettings.sqf",
+    "dev/reportSettings.sqfc",
+    "dev/test_hitpointConfigs.sqf",
+    "dev/test_hitpointConfigs.sqfc",
+    "dev/watchVariable.sqf",
+    "dev/watchVariable.sqfc",
     
     // Function files
-    "functions\\fnc_addDamageToUnit.sqf",
-    "functions\\fnc_addDamageToUnit.sqfc",
-    "functions\\fnc_adjustPainLevel.sqf",
-    "functions\\fnc_adjustPainLevel.sqfc",
-    "functions\\fnc_deserializeState.sqf",
-    "functions\\fnc_deserializeState.sqfc",
-    "functions\\fnc_serializeState.sqf",
-    "functions\\fnc_serializeState.sqfc",
-    "functions\\fnc_setUnconscious.sqf",
-    "functions\\fnc_setUnconscious.sqfc",
+    "functions/fnc_addDamageToUnit.sqf",
+    "functions/fnc_addDamageToUnit.sqfc",
+    "functions/fnc_adjustPainLevel.sqf",
+    "functions/fnc_adjustPainLevel.sqfc",
+    "functions/fnc_deserializeState.sqf",
+    "functions/fnc_deserializeState.sqfc",
+    "functions/fnc_serializeState.sqf",
+    "functions/fnc_serializeState.sqfc",
+    "functions/fnc_setUnconscious.sqf",
+    "functions/fnc_setUnconscious.sqfc",
     
     // UI files
-    "ui\\tourniquet_arm_left.paa",
-    "ui\\tourniquet_arm_right.paa",
-    "ui\\tourniquet_leg_left.paa",
-    "ui\\tourniquet_leg_right.paa",
+    "ui/tourniquet_arm_left.paa",
+    "ui/tourniquet_arm_right.paa",
+    "ui/tourniquet_leg_left.paa",
+    "ui/tourniquet_leg_right.paa",
 ];
 
 fn setup_logging() {
@@ -61,18 +62,26 @@ fn setup_logging() {
 fn test_list_pbo_contents() -> Result<()> {
     setup_logging();
     let input_dir = Path::new(TEST_PBO_DIR);
-    info!("Testing directory listing from: {}", input_dir.display());
+    let pbo_path = input_dir.join(TEST_PBO);
+    info!("Testing PBO scanning from: {}", pbo_path.display());
     
-    // List all files in the directory
-    let files = walkdir::WalkDir::new(input_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .map(|e| e.path().strip_prefix(input_dir).unwrap().to_string_lossy().to_string())
-        .collect::<Vec<_>>();
+    // Create PBO API and list contents
+    let api = PboApi::builder()
+        .with_timeout(30)
+        .build();
     
-    info!("Found {} files in directory:", files.len());
-    for file in &files {
+    let options = pbo_tools::extract::ExtractOptions {
+        no_pause: true,
+        warnings_as_errors: false,
+        brief_listing: false,
+        ..Default::default()
+    };
+    
+    let result = api.list_with_options(&pbo_path, options)?;
+    let files = result.get_file_list();
+    
+    info!("Found {} files in PBO:", files.len());
+    for file in files.iter() {
         info!("  {}", file);
     }
     
@@ -83,13 +92,13 @@ fn test_list_pbo_contents() -> Result<()> {
         }
         assert!(
             files.contains(&expected_file.to_string()),
-            "Expected file {} was not found in directory",
+            "Expected file {} was not found in PBO",
             expected_file
         );
     }
     
     // Check for unexpected files
-    for file in &files {
+    for file in files.iter() {
         if !EXPECTED_FILES.contains(&file.as_str()) {
             info!("Found unexpected file: {}", file);
         }
@@ -111,16 +120,33 @@ fn test_list_pbo_contents() -> Result<()> {
 fn test_extract_with_options() -> Result<()> {
     setup_logging();
     let input_dir = Path::new(TEST_PBO_DIR);
-    info!("Testing file filtering from: {}", input_dir.display());
+    let pbo_path = input_dir.join(TEST_PBO);
+    let output_dir = tempfile::tempdir()?;
+    info!("Testing PBO extraction with options from: {}", pbo_path.display());
     
-    // List all hpp files in the directory
-    let files = walkdir::WalkDir::new(input_dir)
+    // Create PBO API and extract with options
+    let api = PboApi::builder()
+        .with_timeout(30)
+        .build();
+    
+    let mut options = pbo_tools::extract::ExtractOptions {
+        no_pause: true,
+        warnings_as_errors: false,
+        brief_listing: false,
+        ..Default::default()
+    };
+    options.file_filter = Some("hpp".to_string());
+    
+    api.extract_with_options(&pbo_path, output_dir.path(), options)?;
+    
+    // List all hpp files in the output directory
+    let files: Vec<_> = walkdir::WalkDir::new(output_dir.path())
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
         .filter(|e| e.path().extension().map_or(false, |ext| ext == "hpp"))
         .map(|e| e.file_name().to_string_lossy().to_string())
-        .collect::<Vec<_>>();
+        .collect();
     
     info!("Found {} hpp files:", files.len());
     for file in &files {
@@ -141,69 +167,36 @@ fn test_extract_with_options() -> Result<()> {
 }
 
 #[test]
-fn test_extract_multiple_pbos() -> Result<()> {
-    setup_logging();
-    let input_dir = Path::new(TEST_PBO_DIR);
-    info!("Testing directory structure from: {}", input_dir.display());
-    
-    // List all files in the directory
-    let files = walkdir::WalkDir::new(input_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .map(|e| e.path().strip_prefix(input_dir).unwrap().to_string_lossy().to_string())
-        .collect::<Vec<_>>();
-    
-    info!("Found {} files in directory:", files.len());
-    for file in &files {
-        info!("  {}", file);
-    }
-    
-    // Verify all expected files are present
-    for expected_file in EXPECTED_FILES {
-        if !files.contains(&expected_file.to_string()) {
-            info!("Missing expected file: {}", expected_file);
-        }
-        assert!(
-            files.contains(&expected_file.to_string()),
-            "Expected file {} was not found in directory",
-            expected_file
-        );
-    }
-    
-    // Check for unexpected files
-    for file in &files {
-        if !EXPECTED_FILES.contains(&file.as_str()) {
-            info!("Found unexpected file: {}", file);
-        }
-    }
-    
-    // Verify no unexpected files
-    assert_eq!(
-        files.len(),
-        EXPECTED_FILES.len(),
-        "Found {} files but expected {}",
-        files.len(),
-        EXPECTED_FILES.len()
-    );
-    
-    Ok(())
-}
-
-#[test]
 fn test_extract_with_extension_filter() -> Result<()> {
     setup_logging();
     let input_dir = Path::new(TEST_PBO_DIR);
-    info!("Testing extension filtering from: {}", input_dir.display());
+    let pbo_path = input_dir.join(TEST_PBO);
+    let output_dir = tempfile::tempdir()?;
+    info!("Testing PBO extraction with extension filter from: {}", pbo_path.display());
     
-    // List all hpp files in the directory
-    let files = walkdir::WalkDir::new(input_dir)
+    // Create PBO API and extract with options
+    let api = PboApi::builder()
+        .with_timeout(30)
+        .build();
+    
+    let mut options = pbo_tools::extract::ExtractOptions {
+        no_pause: true,
+        warnings_as_errors: false,
+        brief_listing: false,
+        ..Default::default()
+    };
+    options.file_filter = Some("hpp".to_string());
+    
+    api.extract_with_options(&pbo_path, output_dir.path(), options)?;
+    
+    // List all hpp files in the output directory
+    let files: Vec<_> = walkdir::WalkDir::new(output_dir.path())
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
         .filter(|e| e.path().extension().map_or(false, |ext| ext == "hpp"))
         .map(|e| e.file_name().to_string_lossy().to_string())
-        .collect::<Vec<_>>();
+        .collect();
     
     info!("Found {} hpp files:", files.len());
     for file in &files {

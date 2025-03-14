@@ -142,6 +142,38 @@ impl<'a> PboProcessor<'a> {
         let api = self.create_pbo_api();
         let options = self.create_extract_options();
         
+        // First, check if there are any files to extract by listing contents
+        debug!("Checking PBO contents before extraction: {}", scan_result.path.display());
+        let list_result = match api.list_contents(&scan_result.path) {
+            Ok(result) => result,
+            Err(e) => {
+                warn!("Failed to list PBO contents {}: {}", scan_result.path.display(), e);
+                return Err(anyhow::anyhow!("Failed to list PBO contents: {}", e));
+            }
+        };
+        
+        // Get the list of files in the PBO
+        let file_list = list_result.get_file_list();
+        
+        // Check if there are any files matching our extension filter
+        let has_matching_files = file_list.iter().any(|file| {
+            let path = Path::new(file);
+            path.extension()
+                .map(|ext| self.extensions.contains(&ext.to_string_lossy().to_string()))
+                .unwrap_or(false)
+        });
+        
+        if !has_matching_files {
+            debug!("No files matching extension filter '{}' found in PBO, skipping extraction: {}", 
+                   self.extensions, scan_result.path.display());
+            // Return a successful empty result
+            return Ok(ExtractResult {
+                return_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+        
         // Attempt 1: Standard extraction
         debug!("Trying standard extraction for PBO: {}", scan_result.path.display());
         match api.extract_with_options(&scan_result.path, output_dir, options.clone()) {
@@ -150,6 +182,17 @@ impl<'a> PboProcessor<'a> {
                 Ok(result)
             },
             Err(e) => {
+                // Check if this is error code 11 (no files to extract)
+                if e.to_string().contains("return code 11") || 
+                   e.to_string().contains("no file(s) to extract") {
+                    debug!("No files to extract (error code 11), treating as success: {}", scan_result.path.display());
+                    return Ok(ExtractResult {
+                        return_code: 0,
+                        stdout: String::new(),
+                        stderr: String::new(),
+                    });
+                }
+                
                 warn!("Standard extraction failed: {}", e);
                 
                 // Attempt 2: Permissive extraction
@@ -162,6 +205,17 @@ impl<'a> PboProcessor<'a> {
                         Ok(result)
                     },
                     Err(e) => {
+                        // Check again for error code 11
+                        if e.to_string().contains("return code 11") || 
+                           e.to_string().contains("no file(s) to extract") {
+                            debug!("No files to extract (error code 11), treating as success: {}", scan_result.path.display());
+                            return Ok(ExtractResult {
+                                return_code: 0,
+                                stdout: String::new(),
+                                stderr: String::new(),
+                            });
+                        }
+                        
                         warn!("Permissive extraction failed: {}", e);
                         
                         // Attempt 3: Direct extraction
@@ -172,6 +226,17 @@ impl<'a> PboProcessor<'a> {
                                 Ok(result)
                             },
                             Err(e) => {
+                                // Check one more time for error code 11
+                                if e.to_string().contains("return code 11") || 
+                                   e.to_string().contains("no file(s) to extract") {
+                                    debug!("No files to extract (error code 11), treating as success: {}", scan_result.path.display());
+                                    return Ok(ExtractResult {
+                                        return_code: 0,
+                                        stdout: String::new(),
+                                        stderr: String::new(),
+                                    });
+                                }
+                                
                                 warn!("Direct extraction failed: {}", e);
                                 Err(anyhow::anyhow!("All extraction attempts failed: {}", e))
                             }

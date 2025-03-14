@@ -112,6 +112,20 @@ pub fn extract_pbo_with_options(
     let api = PboApi::builder()
         .with_timeout(30)
         .build();
-    api.extract_with_options(pbo_path, output_dir, options)?;
-    Ok(())
+    
+    match api.extract_with_options(pbo_path, output_dir, options) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            // Check if this is error code 11 (no files to extract)
+            let error_str = e.to_string();
+            if error_str.contains("return code 11") || 
+               error_str.contains("no file(s) to extract") {
+                debug!("No files to extract (error code 11), treating as success: {}", pbo_path.display());
+                return Ok(());
+            }
+            
+            // Propagate other errors
+            Err(anyhow::anyhow!("{}", e))
+        }
+    }
 }
